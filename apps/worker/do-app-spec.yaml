@@ -1,0 +1,52 @@
+# DigitalOcean App Platform Specification
+# Deploy with: doctl apps create --spec do-app-spec.yaml
+# Or import this file in the DigitalOcean dashboard
+
+name: miniemployee-worker
+
+services: []
+
+workers:
+  - name: task-worker
+    github:
+      repo: galo-graneros/miniemployee
+      branch: main
+      deploy_on_push: true
+    source_dir: apps/worker
+    dockerfile_path: Dockerfile
+    
+    # Environment variables (set in DO dashboard for secrets)
+    envs:
+      - key: SUPABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: SUPABASE_SERVICE_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: WORKER_ID
+        scope: RUN_TIME
+        value: "do-worker-1"
+      - key: LOG_LEVEL
+        scope: RUN_TIME
+        value: "INFO"
+      - key: POLL_INTERVAL
+        scope: RUN_TIME
+        value: "2"
+    
+    # Instance configuration
+    instance_count: 1
+    instance_size_slug: professional-xs  # 1 vCPU, 1GB RAM - $12/month
+    
+    # Health checks not available for workers, but you can add alerts
+    alerts:
+      - rule: DEPLOYMENT_FAILED
+      - rule: DOMAIN_FAILED
+
+# Databases (optional - using Supabase instead)
+# databases: []
+
+# Region
+region: nyc
