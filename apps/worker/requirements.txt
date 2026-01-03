@@ -1,0 +1,19 @@
+# AutoAgent Python Worker
+# Browser automation agent using browser-use and Claude
+
+# Core dependencies
+browser-use>=0.1.40
+langchain>=0.3.14
+langchain-anthropic>=0.3.0
+langchain-core>=0.3.28
+
+# Supabase for database and realtime
+supabase>=2.11.0
+python-dotenv>=1.0.1
+
+# Playwright for browser automation
+playwright>=1.49.1
+
+# Utilities
+pydantic>=2.10.4
+httpx>=0.28.1
