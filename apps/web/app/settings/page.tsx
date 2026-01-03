@@ -31,6 +31,16 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase";
 import { validatePassword, PASSWORD_RULES } from "@/lib/auth";
+import {
+    setup2FA,
+    verify2FA,
+    disable2FA,
+    createCheckout,
+    getSubscriptionStatus,
+    cancelSubscription,
+    resumeSubscription,
+    deleteAccount,
+} from "@/lib/supabase-functions";
 
 interface ToggleProps {
     enabled: boolean;
@@ -130,18 +140,9 @@ export default function SettingsPage() {
             if (!user) return;
             
             try {
-                const session = await supabase.auth.getSession();
-                const response = await fetch('/api/billing/subscription', {
-                    headers: {
-                        'Authorization': `Bearer ${session.data.session?.access_token}`,
-                    },
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    setSubscription(data.subscription);
-                    setBillingHistory(data.billingHistory || []);
-                }
+                const data = await getSubscriptionStatus();
+                setSubscription(data.subscription);
+                setBillingHistory(data.billing_history || []);
             } catch (error) {
                 console.error('Error fetching billing:', error);
             } finally {
@@ -214,17 +215,7 @@ export default function SettingsPage() {
     const handleSetup2FA = async () => {
         setTwoFALoading(true);
         try {
-            const session = await supabase.auth.getSession();
-            const response = await fetch('/api/auth/2fa/setup', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                },
-            });
-
-            if (!response.ok) throw new Error('Failed to setup 2FA');
-
-            const data = await response.json();
+            const data = await setup2FA();
             setTwoFactorSecret(data.secret);
             setTwoFactorQR(data.otpauthUrl);
             setBackupCodes(data.backupCodes);
@@ -241,21 +232,7 @@ export default function SettingsPage() {
         setTwoFALoading(true);
         setPasswordError("");
         try {
-            const session = await supabase.auth.getSession();
-            const response = await fetch('/api/auth/2fa/verify', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ code: twoFactorCode }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Invalid code');
-            }
-
+            await verify2FA(twoFactorCode);
             await refreshProfile();
             setShow2FASetup(false);
             setShow2FADialog(false);
@@ -272,21 +249,7 @@ export default function SettingsPage() {
         setTwoFALoading(true);
         setPasswordError("");
         try {
-            const session = await supabase.auth.getSession();
-            const response = await fetch('/api/auth/2fa/disable', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ code: twoFactorCode }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || 'Invalid code');
-            }
-
+            await disable2FA(twoFactorCode);
             await refreshProfile();
             setShow2FADialog(false);
             setTwoFactorCode("");
@@ -302,20 +265,8 @@ export default function SettingsPage() {
         setCheckoutLoading(true);
         
         try {
-            const session = await supabase.auth.getSession();
-            const response = await fetch('/api/billing/checkout', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ plan }),
-            });
-
-            if (!response.ok) throw new Error('Failed to create checkout');
-
-            const { checkoutUrl } = await response.json();
-            window.location.href = checkoutUrl;
+            const data = await createCheckout(plan);
+            window.location.href = data.checkoutUrl;
         } catch (error) {
             console.error('Checkout error:', error);
             setCheckoutLoading(false);
@@ -325,22 +276,8 @@ export default function SettingsPage() {
     // Cancel subscription
     const handleCancelSubscription = async () => {
         try {
-            const session = await supabase.auth.getSession();
-            await fetch('/api/billing/subscription', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ action: 'cancel' }),
-            });
-
-            const response = await fetch('/api/billing/subscription', {
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                },
-            });
-            const data = await response.json();
+            await cancelSubscription();
+            const data = await getSubscriptionStatus();
             setSubscription(data.subscription);
         } catch (error) {
             console.error('Cancel error:', error);
@@ -350,22 +287,8 @@ export default function SettingsPage() {
     // Resume subscription
     const handleResumeSubscription = async () => {
         try {
-            const session = await supabase.auth.getSession();
-            await fetch('/api/billing/subscription', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ action: 'resume' }),
-            });
-
-            const response = await fetch('/api/billing/subscription', {
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                },
-            });
-            const data = await response.json();
+            await resumeSubscription();
+            const data = await getSubscriptionStatus();
             setSubscription(data.subscription);
             await refreshProfile();
         } catch (error) {
@@ -379,14 +302,7 @@ export default function SettingsPage() {
         setDeleteLoading(true);
         
         try {
-            const session = await supabase.auth.getSession();
-            await fetch('/api/account/delete', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${session.data.session?.access_token}`,
-                },
-            });
-
+            await deleteAccount();
             await signOut();
             router.push('/');
         } catch (error) {
