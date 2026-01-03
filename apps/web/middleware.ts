@@ -1,6 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import type { CookieOptions } from '@supabase/ssr'
 
 // Routes that require authentication
 const protectedRoutes = ['/settings', '/history', '/vault']
@@ -8,20 +7,9 @@ const protectedRoutes = ['/settings', '/history', '/vault']
 // Routes that should redirect to app if already authenticated
 const authRoutes = ['/login', '/signup', '/forgot-password']
 
-// Public routes (no auth check needed)
-const publicRoutes = ['/', '/terms', '/privacy', '/pricing']
-
-interface CookieToSet {
-  name: string
-  value: string
-  options: CookieOptions
-}
-
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
+  let supabaseResponse = NextResponse.next({
+    request,
   })
 
   const supabase = createServerClient(
@@ -32,22 +20,27 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll()
         },
-        setAll(cookiesToSet: CookieToSet[]) {
-          cookiesToSet.forEach(({ name, value }: CookieToSet) =>
-            request.cookies.set(name, value)
-          )
-          response = NextResponse.next({
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({
             request,
           })
-          cookiesToSet.forEach(({ name, value, options }: CookieToSet) =>
-            response.cookies.set(name, value, options)
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
           )
         },
       },
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // IMPORTANT: Avoid writing any logic between createServerClient and
+  // supabase.auth.getUser(). A simple mistake could make it very hard to debug
+  // issues with users being randomly logged out.
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
   const pathname = request.nextUrl.pathname
 
   // Check if this is a protected route
@@ -59,16 +52,6 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = authRoutes.some(route => 
     pathname === route || pathname.startsWith(route + '/')
   )
-
-  // Check if this is a public route
-  const isPublicRoute = publicRoutes.some(route => 
-    pathname === route || pathname.startsWith(route + '/')
-  )
-
-  // Handle API routes - let them pass through
-  if (pathname.startsWith('/api/')) {
-    return response
-  }
 
   // Redirect to login if accessing protected route without auth
   if (isProtectedRoute && !user) {
@@ -82,11 +65,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
-  // For the main app page (chat), require authentication
-  // But only if it's exactly '/' and the user is not on landing page
-  // We'll handle this in the page component to show landing vs app
+  // IMPORTANT: You *must* return the supabaseResponse object as it is.
+  // If you're creating a new response object with NextResponse.next() make sure to:
+  // 1. Pass the request in it, like so:
+  //    const myNewResponse = NextResponse.next({ request })
+  // 2. Copy over the cookies, like so:
+  //    myNewResponse.cookies.setAll(supabaseResponse.cookies.getAll())
+  // 3. Change the myNewResponse object to fit your needs, but avoid changing
+  //    the cookies!
+  // 4. Finally:
+  //    return myNewResponse
+  // If this is not done, you may be causing the browser and server to go out
+  // of sync and terminate the user's session prematurely!
 
-  return response
+  return supabaseResponse
 }
 
 export const config = {
