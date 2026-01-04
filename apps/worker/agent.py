@@ -64,7 +64,7 @@ class BrowserAgent:
             # Create the browser-use agent
             # browser-use 0.11.x has its own ChatAnthropic wrapper
             llm = ChatAnthropic(
-                model="claude-sonnet-4-20250514",
+                model="claude-opus-4-5-20251101",
                 api_key=ANTHROPIC_API_KEY,
             )
             
