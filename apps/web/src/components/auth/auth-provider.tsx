@@ -19,16 +19,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', userId)
-      .single()
+  const fetchProfile = async (userId: string, retries = 3): Promise<Profile | null> => {
+    for (let i = 0; i < retries; i++) {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
-    if (!error && data) {
-      setProfile(data as Profile)
+      if (!error && data) {
+        setProfile(data as Profile)
+        return data as Profile
+      }
+      
+      // If profile doesn't exist yet (trigger might be slow), wait and retry
+      if (error?.code === 'PGRST116' && i < retries - 1) {
+        console.log(`Profile not found, retrying in ${(i + 1) * 500}ms...`)
+        await new Promise(resolve => setTimeout(resolve, (i + 1) * 500))
+        continue
+      }
+      
+      console.error('Error fetching profile:', error)
     }
+    return null
   }
 
   const refreshProfile = async () => {
@@ -45,24 +58,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile(session.user.id)
-      }
-      setLoading(false)
-    })
+    let mounted = true
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    // Get initial session
+    const initAuth = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        
+        if (!mounted) return
+        
         setSession(session)
         setUser(session?.user ?? null)
         
         if (session?.user) {
           await fetchProfile(session.user.id)
+        }
+      } catch (error) {
+        console.error('Error initializing auth:', error)
+      } finally {
+        if (mounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    initAuth()
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (!mounted) return
+        
+        console.log('Auth state changed:', event)
+        
+        setSession(session)
+        setUser(session?.user ?? null)
+        
+        if (session?.user) {
+          // Give the trigger time to create the profile for new signups
+          if (event === 'SIGNED_IN') {
+            await fetchProfile(session.user.id, 5)
+          } else {
+            await fetchProfile(session.user.id)
+          }
         } else {
           setProfile(null)
         }
@@ -71,7 +109,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   return (
