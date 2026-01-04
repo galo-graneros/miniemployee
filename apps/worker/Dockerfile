@@ -4,8 +4,9 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies for Playwright
+# Install system dependencies for Playwright and uv
 RUN apt-get update && apt-get install -y \
+    curl \
     wget \
     gnupg \
     ca-certificates \
@@ -33,6 +34,10 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements first for caching
 COPY requirements.txt .
+
+# Install uv (required by browser-use)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
