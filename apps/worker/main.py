@@ -118,8 +118,8 @@ class TaskWorker:
             except Exception as e:
                 logger.error(f"Error in polling loop: {e}")
 
-            # Poll every 5 seconds
-            await asyncio.sleep(5)
+            # Poll every 10 seconds to save quota
+            await asyncio.sleep(10)
 
     async def _execute_task(self, task: dict):
         """Execute a single task using the browser agent."""
